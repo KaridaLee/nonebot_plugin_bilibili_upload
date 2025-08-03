@@ -34,7 +34,6 @@ def get_bilibili_page(url: str) -> requests.Response:
     
     response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
     response.raise_for_status()
-    
     return response
 
 def merge_audio_video(video_path, audio_path, output_path):
