@@ -5,8 +5,6 @@ import os
 import subprocess
 from typing import Optional, Tuple
 from .config import Config
-from nonebot import get_plugin_config, get_driver
-from nonebot.log import logger
 
 plugin_config = Config()
 
