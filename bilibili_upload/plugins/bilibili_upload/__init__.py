@@ -2,7 +2,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
-from nonebot import get_plugin_config, on_message, get_driver
+from nonebot import on_message
 from nonebot.plugin import PluginMetadata
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
