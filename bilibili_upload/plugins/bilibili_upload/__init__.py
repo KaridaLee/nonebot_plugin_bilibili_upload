@@ -1,13 +1,15 @@
 import asyncio
 import os
 import re
+import httpx
+import time
 from pathlib import Path
 from nonebot import on_message
 from nonebot.plugin import PluginMetadata
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.log import logger
 from .config import Config
-from .utils import is_bilibili_content, extract_bv_from_url
+from .utils import is_bilibili_content, extract_bv_from_url, is_likely_false_positive
 from .bilibili_videos import download_bilibili_video
 from .bilibili_opus import convert_opus_to_image
 
@@ -25,7 +27,12 @@ bilibili_matcher = on_message(priority=10, block=False)
 @bilibili_matcher.handle()
 async def handle_bilibili(bot: Bot, event: MessageEvent):
     message_text = str(event.get_message())
-
+    
+    # 添加误识别检测
+    if is_likely_false_positive(message_text):
+        return
+    
+    # 专栏处理逻辑保持不变
     if any(pattern in message_text for pattern in ['bilibili.com/opus/', 't.bilibili.com/']):
         url_match = re.search(r'https?://(?:www\.bilibili\.com/opus/|t\.bilibili\.com/)\d+', message_text)
         if url_match:
@@ -56,12 +63,45 @@ async def handle_bilibili(bot: Bot, event: MessageEvent):
                 await bilibili_matcher.send(f"专栏转换过程中出现错误: {str(e)}")
             return
     
+    # 检查是否为B站视频内容
     if not is_bilibili_content(message_text):
         return
+        
     url = extract_bv_from_url(message_text)
     if not url:
         return
-    await bilibili_matcher.send("正在下载了喵~")
+        
+    image_path = None
+
+    try:
+        # 创建图片保存目录（如果不存在）
+        image_dir = os.path.join(plugin_config.bilibili_download_dir, "images")
+        os.makedirs(image_dir, exist_ok=True)
+
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            response = await client.get("https://t.alcy.cc/xhl")
+            if response.status_code == 200:
+                content_type = response.headers.get('content-type', '')
+                if 'webp' in content_type or response.url.path.endswith('.webp'):
+                    ext = '.webp'
+                # 生成唯一的文件名
+                timestamp = int(time.time())
+                image_path = os.path.join(image_dir, f"temp_image_{timestamp}{ext}")
+
+                # 保存图片到本地
+                with open(image_path, "wb") as f:
+                    f.write(response.content)
+
+                # 构建带图片的消息
+                image_segment = MessageSegment.image(Path(image_path))
+                message_with_image = MessageSegment.text("正在下载了喵~") + image_segment
+                await bilibili_matcher.send(message_with_image)
+            else:
+                logger.warning(f"获取图片失败，状态码: {response.status_code}, 最终URL: {response.url}")
+                await bilibili_matcher.send("正在下载了喵~")
+    except Exception as e:
+        logger.error(f"获取图片失败: {e}")
+        await bilibili_matcher.send("正在下载了喵~")
     
     try:
         loop = asyncio.get_event_loop()
